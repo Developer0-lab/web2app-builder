@@ -14,7 +14,7 @@ function validPackage(value:string) {
   return /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$/.test(value);
 }
 
-function validIcon(value: unknown) {
+function validImage(value: unknown) {
   return typeof value === 'string' && /^[A-Za-z0-9+/=]+$/.test(value) && value.length <= 90000;
 }
 
@@ -26,15 +26,17 @@ export async function POST(req: Request) {
     const appName = typeof body.appName === 'string' ? body.appName.trim() : 'Web2App';
     const packageName = typeof body.packageName === 'string' ? body.packageName.trim() : 'com.web2app.generated';
     const iconBase64 = body.iconBase64 === '' || body.iconBase64 == null ? '' : body.iconBase64;
+    const splashBase64 = body.splashBase64 === '' || body.splashBase64 == null ? '' : body.splashBase64;
 
     if (!/^https?:\/\/[^\s]+$/i.test(url)) return NextResponse.json({error:'Enter a valid website URL.'},{status:400});
     if (appName.length < 1 || appName.length > 40) return NextResponse.json({error:'App name must be 1–40 characters.'},{status:400});
     if (!validPackage(packageName) || packageName.length > 120) return NextResponse.json({error:'Use a valid Android package name such as com.example.myapp.'},{status:400});
-    if (!validIcon(iconBase64)) return NextResponse.json({error:'The app icon is too large or invalid. Please choose a smaller image.'},{status:400});
+    if (!validImage(iconBase64)) return NextResponse.json({error:'The app icon is too large or invalid. Please choose a smaller image.'},{status:400});
+    if (!validImage(splashBase64)) return NextResponse.json({error:'The splash screen is too large or invalid. Please choose a smaller image.'},{status:400});
 
     const h = headers();
     const started = Date.now();
-    const dispatch = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflow}/dispatches`,{method:'POST',headers:h,body:JSON.stringify({ref:'main',inputs:{web_app_url:url,app_name:appName,package_name:packageName,icon_base64:iconBase64}})});
+    const dispatch = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflow}/dispatches`,{method:'POST',headers:h,body:JSON.stringify({ref:'main',inputs:{web_app_url:url,app_name:appName,package_name:packageName,icon_base64:iconBase64,splash_base64:splashBase64}})});
     if (!dispatch.ok) return NextResponse.json({error:`GitHub rejected the build request (${dispatch.status}).`},{status:502});
 
     let runId:number|undefined;
