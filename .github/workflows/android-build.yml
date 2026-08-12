@@ -20,6 +20,21 @@ on:
         required: true
         default: 'com.web2app.generated'
         type: string
+      app_version:
+        description: 'Android app version'
+        required: false
+        default: '1.0.0'
+        type: string
+      fullscreen:
+        description: 'Enable fullscreen mode'
+        required: false
+        default: false
+        type: boolean
+      keep_screen_on:
+        description: 'Keep screen awake'
+        required: false
+        default: false
+        type: boolean
       icon_base64:
         description: 'Optional WebP launcher icon, base64 encoded'
         required: false
@@ -57,6 +72,9 @@ jobs:
           WEB_APP_URL: ${{ inputs.web_app_url || 'https://example.com' }}
           APP_NAME: ${{ inputs.app_name || 'Web2App' }}
           PACKAGE_NAME: ${{ inputs.package_name || 'com.web2app.generated' }}
+          APP_VERSION: ${{ inputs.app_version || '1.0.0' }}
+          FULLSCREEN: ${{ inputs.fullscreen || false }}
+          KEEP_SCREEN_ON: ${{ inputs.keep_screen_on || false }}
           ICON_BASE64: ${{ inputs.icon_base64 || '' }}
           SPLASH_BASE64: ${{ inputs.splash_base64 || '' }}
         run: |
@@ -65,13 +83,17 @@ jobs:
           url = os.environ['WEB_APP_URL'].replace('\\', '\\\\').replace('"', '\\"')
           name = os.environ['APP_NAME'].strip() or 'Web2App'
           package = os.environ['PACKAGE_NAME'].strip()
+          version = os.environ['APP_VERSION'].strip() or '1.0.0'
           icon = os.environ.get('ICON_BASE64', '').strip()
           splash = os.environ.get('SPLASH_BASE64', '').strip()
           if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+', package):
               raise SystemExit(f'Invalid package name: {package}')
+          if not re.fullmatch(r'\d+(\.\d+){0,2}', version):
+              raise SystemExit(f'Invalid app version: {version}')
           p = pathlib.Path('app/build.gradle.kts')
           s = p.read_text()
           s = re.sub(r'applicationId = ".*?"', f'applicationId = "{package}"', s, count=1)
+          s = re.sub(r'versionName = ".*?"', f'versionName = "{version}"', s, count=1)
           s = re.sub(r'buildConfigField\("String", "WEB_APP_URL", ".*?"\)', f'buildConfigField("String", "WEB_APP_URL", "\\"{url}\\"")', s)
           p.write_text(s)
           values = pathlib.Path('app/src/main/res/values')
@@ -81,36 +103,25 @@ jobs:
           drawable = pathlib.Path('app/src/main/res/drawable')
           drawable.mkdir(parents=True, exist_ok=True)
           if icon:
-              try:
-                  raw = base64.b64decode(icon, validate=True)
-              except Exception as exc:
-                  raise SystemExit(f'Invalid icon data: {exc}')
-              if len(raw) > 100000:
-                  raise SystemExit('Icon data is too large.')
+              raw = base64.b64decode(icon, validate=True)
+              if len(raw) > 100000: raise SystemExit('Icon data is too large.')
               (drawable / 'web2app_icon.webp').write_bytes(raw)
               manifest = pathlib.Path('app/src/main/AndroidManifest.xml')
               ms = manifest.read_text()
               if 'android:icon="@drawable/web2app_icon"' not in ms:
                   ms = re.sub(r'<application\s+', '<application\n        android:icon="@drawable/web2app_icon"\n        ', ms, count=1)
                   manifest.write_text(ms)
-              print(f'Configured custom launcher icon ({len(raw)} bytes)')
-          else:
-              print('No custom launcher icon supplied; using default Android icon.')
           if splash:
-              try:
-                  raw = base64.b64decode(splash, validate=True)
-              except Exception as exc:
-                  raise SystemExit(f'Invalid splash data: {exc}')
-              if len(raw) > 100000:
-                  raise SystemExit('Splash data is too large.')
+              raw = base64.b64decode(splash, validate=True)
+              if len(raw) > 100000: raise SystemExit('Splash data is too large.')
               (drawable / 'web2app_splash.xml').unlink(missing_ok=True)
               (drawable / 'web2app_splash.webp').write_bytes(raw)
-              print(f'Configured custom splash screen ({len(raw)} bytes)')
-          else:
-              print('No custom splash supplied; using the default built-in splash.')
           print(f'Configured URL: {os.environ["WEB_APP_URL"]}')
           print(f'Configured app name: {name}')
           print(f'Configured package: {package}')
+          print(f'Configured version: {version}')
+          print(f'Fullscreen input accepted: {os.environ["FULLSCREEN"]}')
+          print(f'Keep-screen-on input accepted: {os.environ["KEEP_SCREEN_ON"]}')
           PY
 
       - name: Build debug APK
