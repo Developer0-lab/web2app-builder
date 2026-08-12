@@ -13,7 +13,7 @@ export default function Home() {
 
   async function startBuild() {
     setError(''); setBuild(null);
-    if (!/^https?:\\/\\/[^\\s]+$/i.test(url)) { setError('Enter a valid website URL starting with https://'); return; }
+    if (!url.startsWith('https://') && !url.startsWith('http://')) { setError('Enter a valid website URL starting with https://'); return; }
     setBusy(true);
     try {
       const r = await fetch('/api/build', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,format})});
@@ -38,7 +38,7 @@ export default function Home() {
   }, [build?.runId, build?.status]);
 
   const done = build?.status === 'completed' && build.conclusion === 'success';
-  const running = build && !done && !['failure','cancelled'].includes(build.status);
+  const running = !!build && !done && !['failure','cancelled'].includes(build.status);
 
   return <main className="shell">
     <section className="hero"><span className="badge">ANDROID WEB2APP</span><h1>Turn any website into an app.</h1><p>Enter a website URL and Web2App Builder will create a ready-to-install APK and a Play Store-ready AAB.</p></section>
@@ -47,7 +47,7 @@ export default function Home() {
       <input id="url" className="input" value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://example.com" inputMode="url" />
       <label style={{marginTop:20}}>Build format</label>
       <div className="row">
-        {(['both','apk','aab'] as const).map(x=><button key={x} className={`choice ${format===x?'active':''}`} onClick={()=>setFormat(x)}>{x==='both'?'APK + AAB':x.toUpperCase()}</button>)}
+        {(['both','apk','aab'] as const).map(x=><button type="button" key={x} className={`choice ${format===x?'active':''}`} onClick={()=>setFormat(x)}>{x==='both'?'APK + AAB':x.toUpperCase()}</button>)}
       </div>
       <button className="btn" onClick={startBuild} disabled={busy}>{busy?'Starting build…':'Build Android App'}</button>
       {error && <div className="status error">{error}</div>}
