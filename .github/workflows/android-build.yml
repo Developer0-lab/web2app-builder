@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      web_app_url:
+        description: 'Website URL to package'
+        required: true
+        default: 'https://example.com'
+        type: string
 
 permissions:
   contents: read
@@ -25,6 +31,21 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
+
+      - name: Configure website URL
+        env:
+          WEB_APP_URL: ${{ inputs.web_app_url || 'https://example.com' }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib
+          p = pathlib.Path('app/build.gradle.kts')
+          s = p.read_text()
+          url = os.environ['WEB_APP_URL'].replace('\\', '\\\\').replace('"', '\\"')
+          import re
+          s = re.sub(r'buildConfigField\("String", "WEB_APP_URL", ".*?"\)', f'buildConfigField("String", "WEB_APP_URL", "\\"{url}\\"")', s)
+          p.write_text(s)
+          print(f'Configured website URL: {url}')
+          PY
 
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon
