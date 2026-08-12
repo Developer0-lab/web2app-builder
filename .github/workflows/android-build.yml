@@ -10,6 +10,16 @@ on:
         required: true
         default: 'https://example.com'
         type: string
+      app_name:
+        description: 'Android app name'
+        required: true
+        default: 'Web2App'
+        type: string
+      package_name:
+        description: 'Android package name'
+        required: true
+        default: 'com.web2app.generated'
+        type: string
 
 permissions:
   contents: read
@@ -32,19 +42,31 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Configure website URL
+      - name: Configure Android app
         env:
           WEB_APP_URL: ${{ inputs.web_app_url || 'https://example.com' }}
+          APP_NAME: ${{ inputs.app_name || 'Web2App' }}
+          PACKAGE_NAME: ${{ inputs.package_name || 'com.web2app.generated' }}
         run: |
           python3 - <<'PY'
-          import os, pathlib
+          import os, pathlib, re
+          url = os.environ['WEB_APP_URL'].replace('\\', '\\\\').replace('"', '\\"')
+          name = os.environ['APP_NAME'].strip() or 'Web2App'
+          package = os.environ['PACKAGE_NAME'].strip()
+          if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+', package):
+              raise SystemExit(f'Invalid package name: {package}')
           p = pathlib.Path('app/build.gradle.kts')
           s = p.read_text()
-          url = os.environ['WEB_APP_URL'].replace('\\', '\\\\').replace('"', '\\"')
-          import re
+          s = re.sub(r'applicationId = ".*?"', f'applicationId = "{package}"', s, count=1)
           s = re.sub(r'buildConfigField\("String", "WEB_APP_URL", ".*?"\)', f'buildConfigField("String", "WEB_APP_URL", "\\"{url}\\"")', s)
           p.write_text(s)
-          print(f'Configured website URL: {url}')
+          values = pathlib.Path('app/src/main/res/values')
+          values.mkdir(parents=True, exist_ok=True)
+          esc_name = name.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace("'", "\\'")
+          (values / 'strings.xml').write_text(f'''<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="app_name">{esc_name}</string>\n</resources>\n''')
+          print(f'Configured URL: {os.environ["WEB_APP_URL"]}')
+          print(f'Configured app name: {name}')
+          print(f'Configured package: {package}')
           PY
 
       - name: Build debug APK
