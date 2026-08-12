@@ -13,7 +13,7 @@ function headers() {
 export async function POST(req: Request) {
   try {
     const {url, format='both'} = await req.json();
-    if (!/^https?:\\/\\/[^\\s]+$/i.test(url)) return NextResponse.json({error:'Invalid website URL.'},{status:400});
+    if (typeof url !== 'string' || (!url.startsWith('https://') && !url.startsWith('http://'))) return NextResponse.json({error:'Invalid website URL.'},{status:400});
     const h = headers();
     const started = Date.now();
     const dispatch = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflow}/dispatches`,{method:'POST',headers:h,body:JSON.stringify({ref:'main',inputs:{web_app_url:url}})});
