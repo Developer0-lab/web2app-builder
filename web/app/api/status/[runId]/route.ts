@@ -11,9 +11,16 @@ export async function GET(_:Request,{params}:{params:Promise<{runId:string}>}){
     if(!r.ok)return NextResponse.json({error:'Workflow run not found.'},{status:r.status});
     const run=await r.json();
     let artifacts:any[]=[];
-    if(run.status==='completed'){
-      const ar=await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/runs/${runId}/artifacts?per_page=20`,{headers:h,cache:'no-store'});
-      if(ar.ok){const d=await ar.json();artifacts=(d.artifacts||[]).filter((a:any)=>!a.expired).map((a:any)=>({id:a.id,name:a.name}));}
+    if(run.status==='completed' && run.conclusion==='success'){
+      for(let attempt=0;attempt<4;attempt++){
+        const ar=await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/runs/${runId}/artifacts?per_page=20`,{headers:h,cache:'no-store'});
+        if(ar.ok){
+          const d=await ar.json();
+          artifacts=(d.artifacts||[]).filter((a:any)=>!a.expired).map((a:any)=>({id:a.id,name:a.name,size:a.size_in_bytes}));
+          if(artifacts.length) break;
+        }
+        if(attempt<3) await new Promise(r=>setTimeout(r,1500));
+      }
     }
     return NextResponse.json({runId:Number(run.id),status:run.status,conclusion:run.conclusion,artifacts});
   }catch(e){return NextResponse.json({error:e instanceof Error?e.message:'Server error'},{status:500});}
