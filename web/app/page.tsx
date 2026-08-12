@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 type Artifact = {id:number;name:string;size?:number};
 type Build = {runId:number;status:string;conclusion?:string|null;artifacts?:Artifact[];format?:'both'|'apk'|'aab';appName?:string;packageName?:string};
 
-async function processImage(file:File, maxSize:number, quality:number) {
+async function processImage(file:File, maxSize:number, quality:number, maxEncoded:number) {
  const source=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=()=>reject(new Error('Could not read the image.'));r.readAsDataURL(file);});
  const image=await new Promise<HTMLImageElement>((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error('Could not decode the image.'));img.src=source;});
  const scale=Math.min(1,maxSize/image.width,maxSize/image.height);
@@ -14,8 +14,8 @@ async function processImage(file:File, maxSize:number, quality:number) {
  const ctx=canvas.getContext('2d'); if(!ctx)throw new Error('Image processing is not supported in this browser.');
  ctx.drawImage(image,0,0,w,h);
  let dataUrl=canvas.toDataURL('image/webp',quality); let raw=dataUrl.split(',')[1]||'';
- for(const q of [0.65,0.5,0.35]){if(raw.length<=88000)break;dataUrl=canvas.toDataURL('image/webp',q);raw=dataUrl.split(',')[1]||'';}
- if(raw.length>88000)throw new Error('That image is too large after processing. Try a simpler image.');
+ for(const q of [0.65,0.5,0.4,0.3,0.22]){if(raw.length<=maxEncoded)break;dataUrl=canvas.toDataURL('image/webp',q);raw=dataUrl.split(',')[1]||'';}
+ if(raw.length>maxEncoded)throw new Error('That image is too large after processing. Try a simpler image.');
  return {raw,dataUrl};
 }
 
@@ -28,11 +28,11 @@ export default function Home(){
 
  const refreshBuild=useCallback(async(runId:number,quiet=false)=>{if(!quiet)setRefreshing(true);try{const r=await fetch(`/api/status/${runId}?t=${Date.now()}`,{cache:'no-store'});const data=await r.json();if(!r.ok)throw new Error(data.error||'Could not check build status.');setBuild((prev)=>({...prev,...data}));return data}catch(e){if(!quiet)setError(e instanceof Error?e.message:'Could not refresh build.');return null}finally{if(!quiet)setRefreshing(false)}},[]);
 
- async function handleIcon(file?:File){setIconError('');if(!file){setIconBase64('');setIconPreview('');return;}if(!file.type.startsWith('image/')){setIconError('Please choose an image file.');return;}if(file.size>10*1024*1024){setIconError('Please choose an image smaller than 10 MB.');return;}try{const x=await processImage(file,192,0.78);setIconBase64(x.raw);setIconPreview(x.dataUrl);}catch(e){setIconError(e instanceof Error?e.message:'Could not process the icon.');}}
+ async function handleIcon(file?:File){setIconError('');if(!file){setIconBase64('');setIconPreview('');return;}if(!file.type.startsWith('image/')){setIconError('Please choose an image file.');return;}if(file.size>10*1024*1024){setIconError('Please choose an image smaller than 10 MB.');return;}try{const x=await processImage(file,192,0.78,18000);setIconBase64(x.raw);setIconPreview(x.dataUrl);}catch(e){setIconError(e instanceof Error?e.message:'Could not process the icon.');}}
 
- async function handleSplash(file?:File){setSplashError('');if(!file){setSplashBase64('');setSplashPreview('');return;}if(!file.type.startsWith('image/')){setSplashError('Please choose an image file.');return;}if(file.size>10*1024*1024){setSplashError('Please choose a splash image smaller than 10 MB.');return;}try{const x=await processImage(file,1200,0.78);setSplashBase64(x.raw);setSplashPreview(x.dataUrl);}catch(e){setSplashError(e instanceof Error?e.message:'Could not process the splash image.');}}
+ async function handleSplash(file?:File){setSplashError('');if(!file){setSplashBase64('');setSplashPreview('');return;}if(!file.type.startsWith('image/')){setSplashError('Please choose an image file.');return;}if(file.size>10*1024*1024){setSplashError('Please choose a splash image smaller than 10 MB.');return;}try{const x=await processImage(file,1000,0.72,38000);setSplashBase64(x.raw);setSplashPreview(x.dataUrl);}catch(e){setSplashError(e instanceof Error?e.message:'Could not process the splash image.');}}
 
- async function startBuild(){setError('');setBuild(null);if(!/^https?:\/\/[^\s]+$/i.test(url.trim())){setError('Enter a valid website URL starting with https://');return;}const finalName=appName.trim()||'Web2App';const finalPackage=packageName.trim()||'com.web2app.generated';setBusy(true);try{const r=await fetch('/api/build',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url.trim(),format,appName:finalName,packageName:finalPackage,iconBase64,splashBase64})});const data=await r.json();if(!r.ok)throw new Error(data.error||'Could not start build');setBuild(data);}catch(e){setError(e instanceof Error?e.message:'Something went wrong')}finally{setBusy(false)}}
+ async function startBuild(){setError('');setBuild(null);if(!/^https?:\/\/[^\s]+$/i.test(url.trim())){setError('Enter a valid website URL starting with https://');return;}if(iconBase64.length+splashBase64.length>56000){setError('Your icon and splash images are too large together. Please use smaller images.');return;}const finalName=appName.trim()||'Web2App';const finalPackage=packageName.trim()||'com.web2app.generated';setBusy(true);try{const r=await fetch('/api/build',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url.trim(),format,appName:finalName,packageName:finalPackage,iconBase64,splashBase64})});const data=await r.json();if(!r.ok)throw new Error(data.error||'Could not start build');setBuild(data);}catch(e){setError(e instanceof Error?e.message:'Something went wrong')}finally{setBusy(false)}}
 
  useEffect(()=>{if(!build?.runId||['completed','failure','cancelled'].includes(build.status))return;const timer=setInterval(()=>refreshBuild(build.runId,true),4000);return()=>clearInterval(timer)},[build?.runId,build?.status,refreshBuild]);
  const done=build?.status==='completed'&&build.conclusion==='success'; const running=!!build&&!done&&!['failure','cancelled'].includes(build.status);
