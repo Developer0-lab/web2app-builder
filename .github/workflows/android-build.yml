@@ -103,6 +103,7 @@ jobs:
                   raise SystemExit(f'Invalid splash data: {exc}')
               if len(raw) > 100000:
                   raise SystemExit('Splash data is too large.')
+              (drawable / 'web2app_splash.xml').unlink(missing_ok=True)
               (drawable / 'web2app_splash.webp').write_bytes(raw)
               print(f'Configured custom splash screen ({len(raw)} bytes)')
           else:
