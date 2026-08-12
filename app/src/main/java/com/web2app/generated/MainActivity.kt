@@ -27,48 +27,44 @@ class MainActivity : Activity() {
 
     private inner class AppWebViewClient : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-            return handleUrl(request.url.toString())
+            return handleUrl(request.url)
         }
 
         @Suppress("DEPRECATION")
         override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
-            return handleUrl(url)
+            return handleUrl(Uri.parse(url))
         }
 
-        private fun handleUrl(url: String): Boolean {
-            val uri = Uri.parse(url)
+        private fun handleUrl(uri: Uri): Boolean {
             val scheme = uri.scheme?.lowercase() ?: return false
+            val host = uri.host?.lowercase()
 
-            // Keep normal website navigation inside the app.
-            if (scheme == "http" || scheme == "https") {
-                val appHost = Uri.parse(BuildConfig.WEB_APP_URL).host
-                if (uri.host == appHost || uri.host?.endsWith(".$appHost") == true) {
-                    return false
-                }
+            // ONLY WhatsApp links are intentionally opened outside the WebView.
+            // Every normal HTTP/HTTPS link stays inside the website/app.
+            val isWhatsApp =
+                scheme == "whatsapp" ||
+                host == "wa.me" ||
+                host == "api.whatsapp.com" ||
+                host == "web.whatsapp.com" ||
+                host == "www.whatsapp.com" ||
+                host == "whatsapp.com"
 
-                // Common external services should leave the WebView and open
-                // with the appropriate Android app/browser.
-                if (uri.host == "wa.me" || uri.host?.endsWith("whatsapp.com") == true ||
-                    uri.host == "api.whatsapp.com" || uri.host == "maps.google.com" ||
-                    uri.host == "www.google.com") {
-                    return launchExternal(uri)
-                }
-
-                // Other external HTTPS links open in the user's browser.
-                return launchExternal(uri)
-            }
-
-            // Handle WhatsApp, phone, email, SMS and other Android URL schemes.
-            return launchExternal(uri)
+            return if (isWhatsApp) launchWhatsApp(uri) else false
         }
 
-        private fun launchExternal(uri: Uri): Boolean {
+        private fun launchWhatsApp(uri: Uri): Boolean {
             return try {
-                startActivity(Intent(Intent.ACTION_VIEW, uri))
+                val whatsappIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                    setPackage("com.whatsapp")
+                }
+                try {
+                    startActivity(whatsappIntent)
+                } catch (_: ActivityNotFoundException) {
+                    startActivity(Intent(Intent.ACTION_VIEW, uri))
+                }
                 true
             } catch (_: ActivityNotFoundException) {
-                // If no app can handle the URL, let WebView try HTTPS URLs.
-                uri.scheme == "http" || uri.scheme == "https"
+                false
             }
         }
     }
