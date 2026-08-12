@@ -10,6 +10,9 @@ export default function Home(){
  const [appName,setAppName]=useState('');
  const [packageName,setPackageName]=useState('');
  const [format,setFormat]=useState<'both'|'apk'|'aab'>('both');
+ const [iconBase64,setIconBase64]=useState('');
+ const [iconPreview,setIconPreview]=useState('');
+ const [iconError,setIconError]=useState('');
  const [build,setBuild]=useState<Build|null>(null);
  const [error,setError]=useState('');
  const [busy,setBusy]=useState(false);
@@ -27,6 +30,33 @@ export default function Home(){
    finally{if(!quiet)setRefreshing(false)}
  },[]);
 
+ async function handleIcon(file?:File){
+  setIconError('');
+  if(!file){setIconBase64('');setIconPreview('');return;}
+  if(!file.type.startsWith('image/')){setIconError('Please choose an image file.');return;}
+  if(file.size>10*1024*1024){setIconError('Please choose an image smaller than 10 MB.');return;}
+  try{
+   const source=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=()=>reject(new Error('Could not read the image.'));r.readAsDataURL(file);});
+   const image=await new Promise<HTMLImageElement>((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error('Could not decode the image.'));img.src=source;});
+   const canvas=document.createElement('canvas');
+   const size=192; canvas.width=size; canvas.height=size;
+   const ctx=canvas.getContext('2d'); if(!ctx)throw new Error('Image processing is not supported in this browser.');
+   ctx.clearRect(0,0,size,size);
+   const scale=Math.min(size/image.width,size/image.height);
+   const w=Math.max(1,Math.round(image.width*scale));
+   const h=Math.max(1,Math.round(image.height*scale));
+   ctx.drawImage(image,Math.round((size-w)/2),Math.round((size-h)/2),w,h);
+   let dataUrl=canvas.toDataURL('image/webp',0.78);
+   let raw=dataUrl.split(',')[1]||'';
+   for(const quality of [0.65,0.5,0.35]){
+    if(raw.length<=88000)break;
+    dataUrl=canvas.toDataURL('image/webp',quality); raw=dataUrl.split(',')[1]||'';
+   }
+   if(raw.length>88000){setIconError('That icon is too complex to upload. Try a simpler image.');return;}
+   setIconBase64(raw);setIconPreview(dataUrl);
+  }catch(e){setIconError(e instanceof Error?e.message:'Could not process the icon.');}
+ }
+
  async function startBuild(){
   setError('');setBuild(null);
   if(!/^https?:\/\/[^\s]+$/i.test(url.trim())){setError('Enter a valid website URL starting with https://');return;}
@@ -34,7 +64,7 @@ export default function Home(){
   const finalPackage=packageName.trim()||'com.web2app.generated';
   setBusy(true);
   try{
-    const r=await fetch('/api/build',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url.trim(),format,appName:finalName,packageName:finalPackage})});
+    const r=await fetch('/api/build',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:url.trim(),format,appName:finalName,packageName:finalPackage,iconBase64})});
     const data=await r.json();
     if(!r.ok)throw new Error(data.error||'Could not start build');
     setBuild(data);
@@ -68,6 +98,16 @@ export default function Home(){
    <div className="grid2">
     <div><label htmlFor="appName">App name</label><input id="appName" className="input" value={appName} onChange={e=>setAppName(e.target.value)} placeholder="My Website App" maxLength={40}/></div>
     <div><label htmlFor="packageName">Package name</label><input id="packageName" className="input" value={packageName} onChange={e=>setPackageName(e.target.value)} placeholder="com.example.myapp" maxLength={120}/></div>
+   </div>
+
+   <div className="iconBox">
+    <div>
+     <label htmlFor="icon">App icon <span className="small">(optional)</span></label>
+     <input id="icon" className="input" type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>handleIcon(e.target.files?.[0])}/>
+     <div className="small">Best results: a square PNG/WebP logo. We'll resize it automatically.</div>
+     {iconError&&<div className="small errorText">{iconError}</div>}
+    </div>
+    {iconPreview&&<div className="iconPreview"><img src={iconPreview} alt="App icon preview"/><button type="button" className="secondary" onClick={()=>handleIcon()}>Remove</button></div>}
    </div>
 
    <label style={{marginTop:20}}>Build format</label>
