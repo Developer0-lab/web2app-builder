@@ -13,6 +13,10 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+        buildConfigField("String", "WEB_APP_URL", "\"https://example.com\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 }
-
