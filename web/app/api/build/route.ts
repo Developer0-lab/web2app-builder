@@ -10,16 +10,29 @@ function headers() {
   return {Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2026-03-10','Content-Type':'application/json'};
 }
 
+function validPackage(value:string) {
+  return /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$/.test(value);
+}
+
 export async function POST(req: Request) {
   try {
-    const {url, format='both'} = await req.json();
-    if (typeof url !== 'string' || (!url.startsWith('https://') && !url.startsWith('http://'))) return NextResponse.json({error:'Invalid website URL.'},{status:400});
+    const body = await req.json();
+    const url = typeof body.url === 'string' ? body.url.trim() : '';
+    const format = body.format === 'apk' || body.format === 'aab' ? body.format : 'both';
+    const appName = typeof body.appName === 'string' ? body.appName.trim() : 'Web2App';
+    const packageName = typeof body.packageName === 'string' ? body.packageName.trim() : 'com.web2app.generated';
+
+    if (!/^https?:\/\/[^\s]+$/i.test(url)) return NextResponse.json({error:'Enter a valid website URL.'},{status:400});
+    if (appName.length < 1 || appName.length > 40) return NextResponse.json({error:'App name must be 1–40 characters.'},{status:400});
+    if (!validPackage(packageName) || packageName.length > 120) return NextResponse.json({error:'Use a valid Android package name such as com.example.myapp.'},{status:400});
+
     const h = headers();
     const started = Date.now();
-    const dispatch = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflow}/dispatches`,{method:'POST',headers:h,body:JSON.stringify({ref:'main',inputs:{web_app_url:url}})});
+    const dispatch = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflow}/dispatches`,{method:'POST',headers:h,body:JSON.stringify({ref:'main',inputs:{web_app_url:url,app_name:appName,package_name:packageName}})});
     if (!dispatch.ok) return NextResponse.json({error:`GitHub rejected the build request (${dispatch.status}).`},{status:502});
+
     let runId:number|undefined;
-    for(let i=0;i<8 && !runId;i++){
+    for(let i=0;i<10 && !runId;i++){
       await new Promise(r=>setTimeout(r,1200));
       const r=await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflow}/runs?event=workflow_dispatch&per_page=10`,{headers:h,cache:'no-store'});
       if(!r.ok) continue;
@@ -27,7 +40,7 @@ export async function POST(req: Request) {
       const candidate=data.workflow_runs?.find((x:any)=>new Date(x.created_at).getTime()>=started-5000);
       if(candidate) runId=candidate.id;
     }
-    if(!runId) return NextResponse.json({error:'Build was triggered, but GitHub did not return the run yet. Refresh and check Actions.'},{status:202});
-    return NextResponse.json({runId,status:'queued',format});
+    if(!runId) return NextResponse.json({error:'Build was triggered, but GitHub did not return the run yet. Refresh and check again.'},{status:202});
+    return NextResponse.json({runId,status:'queued',format,appName,packageName});
   } catch(e) { return NextResponse.json({error:e instanceof Error?e.message:'Server error'},{status:500}); }
 }
