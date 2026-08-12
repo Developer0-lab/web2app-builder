@@ -20,6 +20,11 @@ on:
         required: true
         default: 'com.web2app.generated'
         type: string
+      icon_base64:
+        description: 'Optional WebP launcher icon, base64 encoded'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -47,12 +52,14 @@ jobs:
           WEB_APP_URL: ${{ inputs.web_app_url || 'https://example.com' }}
           APP_NAME: ${{ inputs.app_name || 'Web2App' }}
           PACKAGE_NAME: ${{ inputs.package_name || 'com.web2app.generated' }}
+          ICON_BASE64: ${{ inputs.icon_base64 || '' }}
         run: |
           python3 - <<'PY'
-          import os, pathlib, re
+          import os, pathlib, re, base64
           url = os.environ['WEB_APP_URL'].replace('\\', '\\\\').replace('"', '\\"')
           name = os.environ['APP_NAME'].strip() or 'Web2App'
           package = os.environ['PACKAGE_NAME'].strip()
+          icon = os.environ.get('ICON_BASE64', '').strip()
           if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+', package):
               raise SystemExit(f'Invalid package name: {package}')
           p = pathlib.Path('app/build.gradle.kts')
@@ -64,6 +71,23 @@ jobs:
           values.mkdir(parents=True, exist_ok=True)
           esc_name = name.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace("'", "\\'")
           (values / 'strings.xml').write_text(f'''<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="app_name">{esc_name}</string>\n</resources>\n''')
+          if icon:
+              try:
+                  raw = base64.b64decode(icon, validate=True)
+              except Exception as exc:
+                  raise SystemExit(f'Invalid icon data: {exc}')
+              if len(raw) > 100000:
+                  raise SystemExit('Icon data is too large.')
+              icon_path = pathlib.Path('app/src/main/res/drawable/web2app_icon.webp')
+              icon_path.parent.mkdir(parents=True, exist_ok=True)
+              icon_path.write_bytes(raw)
+              manifest = pathlib.Path('app/src/main/AndroidManifest.xml')
+              ms = manifest.read_text()
+              ms = re.sub(r'<application\s+', '<application\n        android:icon="@drawable/web2app_icon"\n        ', ms, count=1)
+              manifest.write_text(ms)
+              print(f'Configured custom launcher icon ({len(raw)} bytes)')
+          else:
+              print('No custom launcher icon supplied; using default Android icon.')
           print(f'Configured URL: {os.environ["WEB_APP_URL"]}')
           print(f'Configured app name: {name}')
           print(f'Configured package: {package}')
