@@ -2,7 +2,7 @@ name: Build Dealership SMS Bridge
 
 on:
   push:
-    branches: [sms-bridge-v2]
+    branches: [main, sms-bridge-v2]
   workflow_dispatch:
 
 permissions:
