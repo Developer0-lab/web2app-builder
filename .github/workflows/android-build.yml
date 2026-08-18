@@ -2,7 +2,7 @@ name: Build Android App
 
 on:
   push:
-    branches: [main]
+    branches: [main, v1.1-file-handling]
   workflow_dispatch:
     inputs:
       web_app_url:
@@ -105,26 +105,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-
       - name: Configure Android app
         env:
           WEB_APP_URL: ${{ inputs.web_app_url || 'https://example.com' }}
           APP_NAME: ${{ inputs.app_name || 'Web2App' }}
           PACKAGE_NAME: ${{ inputs.package_name || 'com.web2app.generated' }}
           APP_VERSION: ${{ inputs.app_version || '1.0.0' }}
-          FULLSCREEN: ${{ inputs.fullscreen || false }}
-          KEEP_SCREEN_ON: ${{ inputs.keep_screen_on || false }}
           CAMERA: ${{ inputs.camera || false }}
           MICROPHONE: ${{ inputs.microphone || false }}
           LOCATION: ${{ inputs.location || false }}
@@ -144,82 +139,44 @@ jobs:
           name = os.environ['APP_NAME'].strip() or 'Web2App'
           package = os.environ['PACKAGE_NAME'].strip()
           version = os.environ['APP_VERSION'].strip() or '1.0.0'
-          if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+', package):
-              raise SystemExit(f'Invalid package name: {package}')
-          if not re.fullmatch(r'\d+(\.\d+){0,2}', version):
-              raise SystemExit(f'Invalid app version: {version}')
-          p = pathlib.Path('app/build.gradle.kts')
-          s = p.read_text()
+          if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+', package): raise SystemExit(f'Invalid package name: {package}')
+          if not re.fullmatch(r'\d+(\.\d+){0,2}', version): raise SystemExit(f'Invalid app version: {version}')
+          p = pathlib.Path('app/build.gradle.kts'); s = p.read_text()
           s = re.sub(r'applicationId = ".*?"', f'applicationId = "{package}"', s, count=1)
           s = re.sub(r'versionName = ".*?"', f'versionName = "{version}"', s, count=1)
-          s = re.sub(r'buildConfigField\("String", "WEB_APP_URL", ".*?"\)', f'buildConfigField("String", "WEB_APP_URL", "\\"{url}\\"")', s)
-          p.write_text(s)
-
-          values = pathlib.Path('app/src/main/res/values')
-          values.mkdir(parents=True, exist_ok=True)
-          esc_name = name.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace("'", "\\'")
-          (values / 'strings.xml').write_text(f'''<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="app_name">{esc_name}</string>\n</resources>\n''')
-
-          manifest = pathlib.Path('app/src/main/AndroidManifest.xml')
-          ms = manifest.read_text()
-          permission_map = {
-              'CAMERA': 'android.permission.CAMERA',
-              'MICROPHONE': 'android.permission.RECORD_AUDIO',
-              'LOCATION': 'android.permission.ACCESS_FINE_LOCATION',
-              'NOTIFICATIONS': 'android.permission.POST_NOTIFICATIONS',
-              'PHOTOS': 'android.permission.READ_MEDIA_IMAGES',
-              'CONTACTS': 'android.permission.READ_CONTACTS',
-              'CALENDAR': 'android.permission.READ_CALENDAR',
-              'PHONE': 'android.permission.CALL_PHONE',
-              'SMS': 'android.permission.SEND_SMS',
-              'BLUETOOTH': 'android.permission.BLUETOOTH_CONNECT',
-          }
-          for key, permission in permission_map.items():
-              if os.environ.get(key, '').lower() == 'true' and f'android:name="{permission}"' not in ms:
-                  ms = ms.replace('<application', f'<uses-permission android:name="{permission}" />\n    <application', 1)
-          if os.environ.get('BLUETOOTH', '').lower() == 'true' and 'android.permission.BLUETOOTH_SCAN' not in ms:
-              ms = ms.replace('<application', '<uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />\n    <application', 1)
+          s = re.sub(r'buildConfigField\("String", "WEB_APP_URL", ".*?"\)', f'buildConfigField("String", "WEB_APP_URL", "\\"{url}\\"")', s); p.write_text(s)
+          values = pathlib.Path('app/src/main/res/values'); values.mkdir(parents=True, exist_ok=True)
+          esc_name = name.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace("'","\\'")
+          (values/'strings.xml').write_text(f'''<?xml version="1.0" encoding="utf-8"?>\n<resources>\n<string name="app_name">{esc_name}</string>\n</resources>\n''')
+          manifest = pathlib.Path('app/src/main/AndroidManifest.xml'); ms = manifest.read_text()
+          permission_map = {'CAMERA':'android.permission.CAMERA','MICROPHONE':'android.permission.RECORD_AUDIO','LOCATION':'android.permission.ACCESS_FINE_LOCATION','NOTIFICATIONS':'android.permission.POST_NOTIFICATIONS','PHOTOS':'android.permission.READ_MEDIA_IMAGES','CONTACTS':'android.permission.READ_CONTACTS','CALENDAR':'android.permission.READ_CALENDAR','PHONE':'android.permission.CALL_PHONE','SMS':'android.permission.SEND_SMS','BLUETOOTH':'android.permission.BLUETOOTH_CONNECT'}
+          for key, perm in permission_map.items():
+              if os.environ.get(key,'').lower() == 'true' and f'android:name="{perm}"' not in ms: ms = ms.replace('<application', f'<uses-permission android:name="{perm}" />\n    <application', 1)
+          if os.environ.get('BLUETOOTH','').lower() == 'true' and 'android.permission.BLUETOOTH_SCAN' not in ms: ms = ms.replace('<application','<uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />\n    <application',1)
           manifest.write_text(ms)
-
-          drawable = pathlib.Path('app/src/main/res/drawable')
-          drawable.mkdir(parents=True, exist_ok=True)
-          icon = os.environ.get('ICON_BASE64', '').strip()
-          splash = os.environ.get('SPLASH_BASE64', '').strip()
+          drawable = pathlib.Path('app/src/main/res/drawable'); drawable.mkdir(parents=True, exist_ok=True)
+          icon = os.environ.get('ICON_BASE64','').strip(); splash = os.environ.get('SPLASH_BASE64','').strip()
           if icon:
-              raw = base64.b64decode(icon, validate=True)
-              if len(raw) > 100000: raise SystemExit('Icon data is too large.')
-              (drawable / 'web2app_icon.webp').write_bytes(raw)
-              if 'android:icon="@drawable/web2app_icon"' not in ms:
-                  ms = re.sub(r'<application\s+', '<application\n        android:icon="@drawable/web2app_icon"\n        ', ms, count=1)
-                  manifest.write_text(ms)
+              raw=base64.b64decode(icon,validate=True)
+              if len(raw)>100000: raise SystemExit('Icon data is too large.')
+              (drawable/'web2app_icon.webp').write_bytes(raw)
+              ms=manifest.read_text()
+              if 'android:icon="@drawable/web2app_icon"' not in ms: ms=re.sub(r'<application\s+','<application\n        android:icon="@drawable/web2app_icon"\n        ',ms,count=1); manifest.write_text(ms)
           if splash:
-              raw = base64.b64decode(splash, validate=True)
-              if len(raw) > 100000: raise SystemExit('Splash data is too large.')
-              (drawable / 'web2app_splash.xml').unlink(missing_ok=True)
-              (drawable / 'web2app_splash.webp').write_bytes(raw)
-
-          print('Permission configuration:')
-          for key in permission_map:
-              print(f'  {key}: {os.environ.get(key, "false")}')
-          print(f'  BLUETOOTH: {os.environ.get("BLUETOOTH", "false")}')
-          print(f'Configured URL: {os.environ["WEB_APP_URL"]}')
-          print(f'Configured app name: {name}')
-          print(f'Configured package: {package}')
-          print(f'Configured version: {version}')
+              raw=base64.b64decode(splash,validate=True)
+              if len(raw)>100000: raise SystemExit('Splash data is too large.')
+              (drawable/'web2app_splash.xml').unlink(missing_ok=True); (drawable/'web2app_splash.webp').write_bytes(raw)
+          print(f'Configured {name} {version} ({package})')
           PY
-
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon
-
       - name: Build release AAB
         run: gradle bundleRelease --no-daemon
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: web2app-apk
           path: app/build/outputs/apk/debug/*.apk
-
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
