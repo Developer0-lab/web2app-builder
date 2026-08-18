@@ -1,20 +1,27 @@
 package com.web2app.generated
 
 import android.app.Activity
+import android.app.DownloadManager
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.View
-import android.widget.FrameLayout
-import android.widget.ImageView
+import android.webkit.CookieManager
+import android.webkit.DownloadListener
+import android.webkit.URLUtil
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.Toast
 
 class MainActivity : Activity() {
     private lateinit var webView: WebView
@@ -32,6 +39,7 @@ class MainActivity : Activity() {
         webView.settings.allowFileAccess = false
         webView.settings.javaScriptCanOpenWindowsAutomatically = true
         webView.webViewClient = AppWebViewClient()
+        webView.setDownloadListener(AppDownloadListener())
         root.addView(webView, FrameLayout.LayoutParams(-1, -1))
 
         splash = ImageView(this).apply {
@@ -52,6 +60,42 @@ class MainActivity : Activity() {
         splash.animate().alpha(0f).setDuration(220).withEndAction {
             splash.visibility = View.GONE
         }.start()
+    }
+
+    private inner class AppDownloadListener : DownloadListener {
+        override fun onDownloadStart(
+            url: String,
+            userAgent: String,
+            contentDisposition: String,
+            mimetype: String,
+            contentLength: Long
+        ) {
+            if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                Toast.makeText(this@MainActivity, "This file type cannot be downloaded here.", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            try {
+                val filename = URLUtil.guessFileName(url, contentDisposition, mimetype)
+                val request = DownloadManager.Request(Uri.parse(url)).apply {
+                    setTitle(filename)
+                    setDescription("Downloading $filename")
+                    setMimeType(mimetype.takeIf { it.isNotBlank() } ?: "application/octet-stream")
+                    setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename)
+                    addRequestHeader("User-Agent", userAgent)
+
+                    val cookies = CookieManager.getInstance().getCookie(url)
+                    if (!cookies.isNullOrBlank()) addRequestHeader("Cookie", cookies)
+                }
+
+                val manager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                manager.enqueue(request)
+                Toast.makeText(this@MainActivity, "Download started", Toast.LENGTH_SHORT).show()
+            } catch (_: Exception) {
+                Toast.makeText(this@MainActivity, "Unable to start download", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private inner class AppWebViewClient : WebViewClient() {
