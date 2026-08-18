@@ -35,6 +35,56 @@ on:
         required: false
         default: false
         type: boolean
+      camera:
+        description: 'Allow camera access'
+        required: false
+        default: false
+        type: boolean
+      microphone:
+        description: 'Allow microphone access'
+        required: false
+        default: false
+        type: boolean
+      location:
+        description: 'Allow location access'
+        required: false
+        default: false
+        type: boolean
+      notifications:
+        description: 'Allow notifications'
+        required: false
+        default: false
+        type: boolean
+      photos:
+        description: 'Allow photo/video access'
+        required: false
+        default: false
+        type: boolean
+      contacts:
+        description: 'Allow contacts access'
+        required: false
+        default: false
+        type: boolean
+      calendar:
+        description: 'Allow calendar access'
+        required: false
+        default: false
+        type: boolean
+      phone:
+        description: 'Allow phone access'
+        required: false
+        default: false
+        type: boolean
+      sms:
+        description: 'Allow SMS access'
+        required: false
+        default: false
+        type: boolean
+      bluetooth:
+        description: 'Allow Bluetooth access'
+        required: false
+        default: false
+        type: boolean
       icon_base64:
         description: 'Optional WebP launcher icon, base64 encoded'
         required: false
@@ -75,6 +125,16 @@ jobs:
           APP_VERSION: ${{ inputs.app_version || '1.0.0' }}
           FULLSCREEN: ${{ inputs.fullscreen || false }}
           KEEP_SCREEN_ON: ${{ inputs.keep_screen_on || false }}
+          CAMERA: ${{ inputs.camera || false }}
+          MICROPHONE: ${{ inputs.microphone || false }}
+          LOCATION: ${{ inputs.location || false }}
+          NOTIFICATIONS: ${{ inputs.notifications || false }}
+          PHOTOS: ${{ inputs.photos || false }}
+          CONTACTS: ${{ inputs.contacts || false }}
+          CALENDAR: ${{ inputs.calendar || false }}
+          PHONE: ${{ inputs.phone || false }}
+          SMS: ${{ inputs.sms || false }}
+          BLUETOOTH: ${{ inputs.bluetooth || false }}
           ICON_BASE64: ${{ inputs.icon_base64 || '' }}
           SPLASH_BASE64: ${{ inputs.splash_base64 || '' }}
         run: |
@@ -84,8 +144,6 @@ jobs:
           name = os.environ['APP_NAME'].strip() or 'Web2App'
           package = os.environ['PACKAGE_NAME'].strip()
           version = os.environ['APP_VERSION'].strip() or '1.0.0'
-          icon = os.environ.get('ICON_BASE64', '').strip()
-          splash = os.environ.get('SPLASH_BASE64', '').strip()
           if not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+', package):
               raise SystemExit(f'Invalid package name: {package}')
           if not re.fullmatch(r'\d+(\.\d+){0,2}', version):
@@ -96,18 +154,41 @@ jobs:
           s = re.sub(r'versionName = ".*?"', f'versionName = "{version}"', s, count=1)
           s = re.sub(r'buildConfigField\("String", "WEB_APP_URL", ".*?"\)', f'buildConfigField("String", "WEB_APP_URL", "\\"{url}\\"")', s)
           p.write_text(s)
+
           values = pathlib.Path('app/src/main/res/values')
           values.mkdir(parents=True, exist_ok=True)
           esc_name = name.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace("'", "\\'")
           (values / 'strings.xml').write_text(f'''<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="app_name">{esc_name}</string>\n</resources>\n''')
+
+          manifest = pathlib.Path('app/src/main/AndroidManifest.xml')
+          ms = manifest.read_text()
+          permission_map = {
+              'CAMERA': 'android.permission.CAMERA',
+              'MICROPHONE': 'android.permission.RECORD_AUDIO',
+              'LOCATION': 'android.permission.ACCESS_FINE_LOCATION',
+              'NOTIFICATIONS': 'android.permission.POST_NOTIFICATIONS',
+              'PHOTOS': 'android.permission.READ_MEDIA_IMAGES',
+              'CONTACTS': 'android.permission.READ_CONTACTS',
+              'CALENDAR': 'android.permission.READ_CALENDAR',
+              'PHONE': 'android.permission.CALL_PHONE',
+              'SMS': 'android.permission.SEND_SMS',
+              'BLUETOOTH': 'android.permission.BLUETOOTH_CONNECT',
+          }
+          for key, permission in permission_map.items():
+              if os.environ.get(key, '').lower() == 'true' and f'android:name="{permission}"' not in ms:
+                  ms = ms.replace('<application', f'<uses-permission android:name="{permission}" />\n    <application', 1)
+          if os.environ.get('BLUETOOTH', '').lower() == 'true' and 'android.permission.BLUETOOTH_SCAN' not in ms:
+              ms = ms.replace('<application', '<uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />\n    <application', 1)
+          manifest.write_text(ms)
+
           drawable = pathlib.Path('app/src/main/res/drawable')
           drawable.mkdir(parents=True, exist_ok=True)
+          icon = os.environ.get('ICON_BASE64', '').strip()
+          splash = os.environ.get('SPLASH_BASE64', '').strip()
           if icon:
               raw = base64.b64decode(icon, validate=True)
               if len(raw) > 100000: raise SystemExit('Icon data is too large.')
               (drawable / 'web2app_icon.webp').write_bytes(raw)
-              manifest = pathlib.Path('app/src/main/AndroidManifest.xml')
-              ms = manifest.read_text()
               if 'android:icon="@drawable/web2app_icon"' not in ms:
                   ms = re.sub(r'<application\s+', '<application\n        android:icon="@drawable/web2app_icon"\n        ', ms, count=1)
                   manifest.write_text(ms)
@@ -116,12 +197,15 @@ jobs:
               if len(raw) > 100000: raise SystemExit('Splash data is too large.')
               (drawable / 'web2app_splash.xml').unlink(missing_ok=True)
               (drawable / 'web2app_splash.webp').write_bytes(raw)
+
+          print('Permission configuration:')
+          for key in permission_map:
+              print(f'  {key}: {os.environ.get(key, "false")}')
+          print(f'  BLUETOOTH: {os.environ.get("BLUETOOTH", "false")}')
           print(f'Configured URL: {os.environ["WEB_APP_URL"]}')
           print(f'Configured app name: {name}')
           print(f'Configured package: {package}')
           print(f'Configured version: {version}')
-          print(f'Fullscreen input accepted: {os.environ["FULLSCREEN"]}')
-          print(f'Keep-screen-on input accepted: {os.environ["KEEP_SCREEN_ON"]}')
           PY
 
       - name: Build debug APK
